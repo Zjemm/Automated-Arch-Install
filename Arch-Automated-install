@@ -1,0 +1,726 @@
+#!/bin/bash
+# Copyright (c) 2017 Eelke Smit
+#
+#
+# This is a copy of the script from Tom Wambold, but edited to meet my needs
+# https://github.com/tom5760/arch-install
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# This script will set up an Arch installation with a 500 MB /boot partition
+# and an (optional) encrypted LVM partition with swap and / inside.
+#
+# You should read through this script before running it in case you want to
+# make any modifications, in particular, the variables just below, and the
+# following functions:
+#
+#    partition_drive - Customize to change partition sizes (/boot vs LVM)
+#    setup_lvm - Customize for partitions inside LVM
+#    install_packages - Customize packages installed in base system
+#                       (desktop environment, etc.)
+
+# START HERE!
+# Download the Arch installer iso
+# Boot from the iso
+# download this script into the live environment
+# make the script executable (chmod +x scriptname)
+# run the script and follow instuctions ./scriptname
+
+## CONFIGURE THESE VARIABLES
+## ALSO LOOK AT THE install_packages FUNCTION TO SEE WHAT IS ACTUALLY INSTALLED
+
+# Drive to install to.
+DRIVE='/dev/sda'
+
+# Hostname of the installed machine.
+HOSTNAME='host101'
+
+# Encrypt everything (except /boot).  Leave blank to disable.
+ENCRYPT_DRIVE='/dev/sda2'
+
+# Passphrase used to encrypt the drive (leave blank to be prompted).
+DRIVE_PASSPHRASE=''
+
+# Root password (leave blank to be prompted).
+ROOT_PASSWORD=''
+
+# Main user to create (by default, added to wheel group, and others).
+USER_NAME='user'
+
+# The main user's password (leave blank to be prompted).
+USER_PASSWORD=''
+
+# System timezone.
+TIMEZONE='Europe/Amsterdam'
+
+# Have /tmp on a tmpfs or not.  Leave blank to disable.
+# Only leave this blank on systems with very little RAM.
+TMP_ON_TMPFS='TRUE'
+
+KEYMAP='us'
+# KEYMAP='dvorak'
+
+# Choose your video driver
+# For Intel
+VIDEO_DRIVER="i915"
+# For nVidia
+#VIDEO_DRIVER="nouveau"
+# For ATI
+#VIDEO_DRIVER="radeon"
+# For generic stuff
+#VIDEO_DRIVER="vesa"
+
+# Wireless device, leave blank to not use wireless and use DHCP instead.
+WIRELESS_DEVICE=""
+# For tc4200's
+#WIRELESS_DEVICE="eth1"
+
+setup() {
+    local boot_dev="$DRIVE"1
+    local lvm_dev="$DRIVE"2
+
+    echo 'Creating partitions'
+    partition_drive "$DRIVE"
+
+    if [ -n "$ENCRYPT_DRIVE" ]
+    then
+        local lvm_part="/dev/mapper/lvm"
+
+        if [ -z "$DRIVE_PASSPHRASE" ]
+        then
+            echo 'Enter a passphrase to encrypt the disk:'
+            stty -echo
+            read DRIVE_PASSPHRASE
+            stty echo
+        fi
+
+        echo 'Encrypting partition'
+        encrypt_drive "$lvm_dev" "$DRIVE_PASSPHRASE" lvm
+
+    else
+        local lvm_part="$lvm_dev"
+    fi
+
+    echo 'Setting up LVM'
+    setup_lvm "$lvm_part" vg00
+
+    echo 'Formatting filesystems'
+    format_filesystems "$boot_dev"
+
+    echo 'Mounting filesystems'
+    mount_filesystems "$boot_dev"
+
+    echo 'Installing base system'
+    install_base
+
+    echo 'Chrooting into installed system to continue setup...'
+    cp $0 /mnt/setup.sh
+    arch-chroot /mnt ./setup.sh chroot
+
+    if [ -f /mnt/setup.sh ]
+    then
+        echo 'ERROR: Something failed inside the chroot, not unmounting filesystems so you can investigate.'
+        echo 'Make sure you unmount everything before you try to run this script again.'
+    else
+        echo 'Unmounting filesystems'
+        unmount_filesystems
+        echo 'Done! Reboot system.'
+    fi
+}
+
+configure() {
+    local boot_dev="$DRIVE"1
+    local lvm_dev="$DRIVE"2
+
+    echo 'Installing additional packages'
+    install_packages
+
+    echo 'Clearing package tarballs'
+    clean_packages
+
+    echo 'Updating pkgfile database'
+    update_pkgfile
+
+    echo 'Setting hostname'
+    set_hostname "$HOSTNAME"
+
+    echo 'Setting timezone'
+    set_timezone "$TIMEZONE"
+
+    echo 'Setting locale'
+    set_locale
+
+    echo 'Setting console keymap'
+    set_keymap
+
+    echo 'Setting hosts file'
+    set_hosts "$HOSTNAME"
+
+    echo 'Setting fstab'
+    set_fstab "$TMP_ON_TMPFS" "$boot_dev"
+
+    echo 'Setting initial modules to load'
+    set_modules_load
+
+    echo 'Configuring initial ramdisk'
+    set_initcpio
+
+    echo 'Setting initial daemons'
+    set_daemons "$TMP_ON_TMPFS"
+
+    echo 'Configuring bootloader'
+    set_syslinux "$lvm_dev"
+
+    echo 'Configuring sudo'
+    set_sudoers
+
+    if [ -z "$ROOT_PASSWORD" ]
+    then
+        echo 'Enter the root password:'
+        stty -echo
+        read ROOT_PASSWORD
+        stty echo
+    fi
+    echo 'Setting root password'
+    set_root_password "$ROOT_PASSWORD"
+
+    if [ -z "$USER_PASSWORD" ]
+    then
+        echo "Enter the password for user $USER_NAME"
+        stty -echo
+        read USER_PASSWORD
+        stty echo
+    fi
+    echo 'Creating initial user'
+    create_user "$USER_NAME" "$USER_PASSWORD"
+
+    echo 'Building locate database'
+    update_locate
+
+    rm /setup.sh
+}
+
+partition_drive() {
+    local dev="$1"; shift
+
+    # 100 MB /boot partition, everything else under LVM
+    parted -s "$dev" \
+        mklabel msdos \
+        mkpart primary fat32 1 500M \
+        mkpart primary xfs 500M 100% \
+        set 1 boot on \
+        set 2 LVM on
+}
+
+encrypt_drive() {
+    local dev="$1"; shift
+    local passphrase="$1"; shift
+    local name="$1"; shift
+
+    echo -en "$passphrase" | cryptsetup -c aes-xts-plain64 -y -s 512 luksFormat "$dev"
+    echo -en "$passphrase" | cryptsetup luksOpen "$dev" lvm
+}
+
+setup_lvm() {
+    local partition="$1"; shift
+    local volgroup="$1"; shift
+
+    pvcreate "$partition"
+    vgcreate "$volgroup" "$partition"
+
+    # Create a 1GB swap partition
+    lvcreate -C y -L1G "$volgroup" -n swap
+
+    # Use the rest of the space for root
+    lvcreate -l '+100%FREE' "$volgroup" -n root
+
+    # Enable the new volumes
+    vgchange -ay
+}
+
+format_filesystems() {
+    local boot_dev="$1"; shift
+
+    mkfs.vfat -F32 "$boot_dev"
+    mkfs.xfs /dev/vg00/root
+    mkswap /dev/vg00/swap
+}
+
+mount_filesystems() {
+    local boot_dev="$1"; shift
+
+    mount /dev/vg00/root /mnt
+    mkdir /mnt/boot
+    mount "$boot_dev" /mnt/boot
+    swapon /dev/vg00/swap
+}
+
+install_base() {
+    echo 'Server = http://mirrors.kernel.org/archlinux/$repo/os/$arch' >> /etc/pacman.d/mirrorlist
+
+    pacstrap /mnt base base-devel
+}
+
+unmount_filesystems() {
+    umount /mnt/boot
+    umount /mnt
+    swapoff /dev/vg00/swap
+    vgchange -an
+    if [ -n "$ENCRYPT_DRIVE" ]
+    then
+        cryptsetup luksClose lvm
+    fi
+}
+
+install_packages() {
+    local packages=''
+
+    # General utilities/libraries
+    packages+=' alsa-utils aspell-en chromium firefox cpupower acpid gvim mlocate net-tools ntp openssh p7zip pkgfile powertop python rsync sudo unrar tar unzip wget zip systemd-sysvcompat htop zsh grml-zsh-config'
+
+    # Development packages
+    packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils'
+
+    # Netcfg
+    if [ -n "$WIRELESS_DEVICE" ]
+    then
+        packages+=' iw dialog wireless_tools wpa_supplicant'
+    fi
+
+    # Java stuff
+    # packages+=' icedtea-web-java7 jdk7-openjdk jre7-openjdk'
+
+    # Libreoffice
+    # packages+=' libreoffice-calc libreoffice-en-US libreoffice-gnome libreoffice-impress libreoffice-writer hunspell-en hyphen-en mythes-en'
+
+    # Misc programs
+    packages+=' gparted dosfstools ntfsprogs grub os-prober efibootmgr'
+
+    # Xserver
+    packages+=' xorg-apps xorg-server xorg-xinit xterm xorg-xinput'
+
+    # Slim login manager
+    # packages+=' slim archlinux-themes-slim'
+
+    # Fonts
+    packages+=' ttf-dejavu ttf-liberation terminus-font ttf-freefont ttf-droid'
+
+    # On Intel processors
+    packages+=' intel-ucode'
+
+    # For laptops
+    packages+=' libinput'
+
+    # Extra packages for tc4200 tablet
+    #packages+=' ipw2200-fw xf86-input-wacom'
+
+    if [ "$VIDEO_DRIVER" = "i915" ]
+    then
+        packages+=' xf86-video-intel libva-intel-driver'
+    elif [ "$VIDEO_DRIVER" = "nouveau" ]
+    then
+        packages+=' xf86-video-nouveau'
+    elif [ "$VIDEO_DRIVER" = "radeon" ]
+    then
+        packages+=' xf86-video-ati'
+    elif [ "$VIDEO_DRIVER" = "vesa" ]
+    then
+        packages+=' xf86-video-vesa'
+    fi
+
+    pacman -Sy --noconfirm $packages
+}
+
+clean_packages() {
+    yes | pacman -Scc
+}
+
+update_pkgfile() {
+    pkgfile -u
+}
+
+set_hostname() {
+    local hostname="$1"; shift
+
+    echo "$hostname" > /etc/hostname
+}
+
+set_timezone() {
+    local timezone="$1"; shift
+
+    ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
+}
+
+set_locale() {
+    echo 'LANG="en_US.UTF-8"' >> /etc/locale.conf
+    echo 'LC_COLLATE="C"' >> /etc/locale.conf
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+    locale-gen
+}
+
+set_keymap() {
+    echo "KEYMAP=$KEYMAP" > /etc/vconsole.conf
+}
+
+set_hosts() {
+    local hostname="$1"; shift
+
+    cat > /etc/hosts <<EOF
+127.0.0.1 localhost.localdomain localhost $hostname
+::1       localhost.localdomain localhost $hostname
+EOF
+}
+
+set_fstab() {
+    local tmp_on_tmpfs="$1"; shift
+    local boot_dev="$1"; shift
+
+    local boot_uuid=$(get_uuid "$boot_dev")
+
+    cat > /etc/fstab <<EOF
+#
+# /etc/fstab: static file system information
+#
+# <file system> <dir>    <type> <options>    <dump> <pass>
+
+/dev/vg00/swap none swap  sw                0 0
+/dev/vg00/root /    xfs  defaults,relatime 0 1
+
+UUID=$boot_uuid /boot vfat defaults,relatime 0 2
+EOF
+}
+
+set_modules_load() {
+    echo 'microcode' > /etc/modules-load.d/intel-ucode.conf
+}
+
+set_initcpio() {
+    local vid
+
+    if [ "$VIDEO_DRIVER" = "i915" ]
+    then
+        vid='i915'
+    elif [ "$VIDEO_DRIVER" = "nouveau" ]
+    then
+        vid='nouveau'
+    elif [ "$VIDEO_DRIVER" = "radeon" ]
+    then
+        vid='radeon'
+    fi
+
+    local encrypt=""
+    if [ -n "$ENCRYPT_DRIVE" ]
+    then
+        encrypt="encrypt"
+    fi
+
+
+    # Set MODULES with your video driver
+    cat > /etc/mkinitcpio.conf <<EOF
+# vim:set ft=sh
+# MODULES
+# The following modules are loaded before any boot hooks are
+# run.  Advanced users may wish to specify all system modules
+# in this array.  For instance:
+#     MODULES="piix ide_disk reiserfs"
+MODULES="ext4 $vid"
+
+# BINARIES
+# This setting includes any additional binaries a given user may
+# wish into the CPIO image.  This is run last, so it may be used to
+# override the actual binaries included by a given hook
+# BINARIES are dependency parsed, so you may safely ignore libraries
+BINARIES=""
+
+# FILES
+# This setting is similar to BINARIES above, however, files are added
+# as-is and are not parsed in any way.  This is useful for config files.
+# Some users may wish to include modprobe.conf for custom module options
+# like so:
+#    FILES="/etc/modprobe.d/modprobe.conf"
+FILES=""
+
+# HOOKS
+# This is the most important setting in this file.  The HOOKS control the
+# modules and scripts added to the image, and what happens at boot time.
+# Order is important, and it is recommended that you do not change the
+# order in which HOOKS are added.  Run 'mkinitcpio -H <hook name>' for
+# help on a given hook.
+# 'base' is _required_ unless you know precisely what you are doing.
+# 'udev' is _required_ in order to automatically load modules
+# 'filesystems' is _required_ unless you specify your fs modules in MODULES
+# Examples:
+##   This setup specifies all modules in the MODULES setting above.
+##   No raid, lvm2, or encrypted root is needed.
+#    HOOKS="base"
+#
+##   This setup will autodetect all modules for your system and should
+##   work as a sane default
+#    HOOKS="base udev autodetect pata scsi sata filesystems"
+#
+##   This is identical to the above, except the old ide subsystem is
+##   used for IDE devices instead of the new pata subsystem.
+#    HOOKS="base udev autodetect ide scsi sata filesystems"
+#
+##   This setup will generate a 'full' image which supports most systems.
+##   No autodetection is done.
+#    HOOKS="base udev pata scsi sata usb filesystems"
+#
+##   This setup assembles a pata mdadm array with an encrypted root FS.
+##   Note: See 'mkinitcpio -H mdadm' for more information on raid devices.
+#    HOOKS="base udev pata mdadm encrypt filesystems"
+#
+##   This setup loads an lvm2 volume group on a usb device.
+#    HOOKS="base udev usb lvm2 filesystems"
+#
+##   NOTE: If you have /usr on a separate partition, you MUST include the
+#    usr, fsck and shutdown hooks.
+HOOKS="base udev autodetect modconf block keymap keyboard $encrypt lvm2 resume filesystems fsck"
+
+# COMPRESSION
+# Use this to compress the initramfs image. By default, gzip compression
+# is used. Use 'cat' to create an uncompressed image.
+#COMPRESSION="gzip"
+#COMPRESSION="bzip2"
+#COMPRESSION="lzma"
+#COMPRESSION="xz"
+#COMPRESSION="lzop"
+
+# COMPRESSION_OPTIONS
+# Additional options for the compressor
+#COMPRESSION_OPTIONS=""
+EOF
+
+    mkinitcpio -p linux
+}
+
+set_daemons() {
+    local tmp_on_tmpfs="$1"; shift
+
+    systemctl enable cpupower.service ntpd.service sshd.service
+
+    if [ -n "$WIRELESS_DEVICE" ]
+    then
+        systemctl enable net-auto-wired.service net-auto-wireless.service
+    else
+        systemctl enable dhcpcd.service
+    fi
+
+    if [ -z "$tmp_on_tmpfs" ]
+    then
+        systemctl mask tmp.mount
+    fi
+}
+
+set_syslinux() {
+    local lvm_dev="$1"; shift
+
+    local lvm_uuid=$(get_uuid "$lvm_dev")
+
+    local crypt=""
+    if [ -n "$ENCRYPT_DRIVE" ]
+    then
+        # Load in resources
+        crypt="cryptdevice=/dev/disk/by-uuid/$lvm_uuid:lvm"
+    fi
+
+    cat > /etc/default/grub <<EOF
+    GRUB_DEFAULT=0
+    GRUB_TIMEOUT=0
+    GRUB_DISTRIBUTOR="Arch"
+    GRUB_CMDLINE_LINUX_DEFAULT="quiet splash acpi_rev_override="1
+    GRUB_CMDLINE_LINUX="$crypt"
+
+    # Preload both GPT and MBR modules so that they are not missed
+    GRUB_PRELOAD_MODULES="part_gpt part_msdos"
+
+    # Uncomment to enable Hidden Menu, and optionally hide the timeout count
+    #GRUB_HIDDEN_TIMEOUT=5
+    #GRUB_HIDDEN_TIMEOUT_QUIET=true
+
+    # Uncomment to use basic console
+    GRUB_TERMINAL_INPUT=console
+
+    # Uncomment to disable graphical terminal
+    #GRUB_TERMINAL_OUTPUT=console
+
+    # The resolution used on graphical terminal
+    # note that you can use only modes which your graphic card supports via VBE
+    # you can see them in real GRUB with the command vbeinfo
+    GRUB_GFXMODE=auto
+
+    # Uncomment to allow the kernel use the same resolution used by grub
+    GRUB_GFXPAYLOAD_LINUX=keep
+
+    # Uncomment if you want GRUB to pass to the Linux kernel the old parameter
+    # format "root=/dev/xxx" instead of "root=/dev/disk/by-uuid/xxx"
+    #GRUB_DISABLE_LINUX_UUID=true
+
+    # Uncomment to disable generation of recovery mode menu entries
+    GRUB_DISABLE_RECOVERY=true
+
+    # Uncomment and set to the desired menu colors.  Used by normal and wallpaper
+    # modes only.  Entries specified as foreground/background.
+    #GRUB_COLOR_NORMAL="light-blue/black"
+    #GRUB_COLOR_HIGHLIGHT="light-cyan/blue"
+
+    # Uncomment one of them for the gfx desired, a image background or a gfxtheme
+    #GRUB_BACKGROUND="/path/to/wallpaper"
+    #GRUB_THEME="/path/to/gfxtheme"
+
+    # Uncomment to get a beep at GRUB start
+    #GRUB_INIT_TUNE="480 440 1"
+
+    #GRUB_SAVEDEFAULT="true"
+EOF
+
+    grub-mkconfig -o /boot/grub/grub.cfg
+    grub-install --recheck $DRIVE
+}
+
+set_sudoers() {
+    cat > /etc/sudoers <<EOF
+## sudoers file.
+##
+## This file MUST be edited with the 'visudo' command as root.
+## Failure to use 'visudo' may result in syntax or file permission errors
+## that prevent sudo from running.
+##
+## See the sudoers man page for the details on how to write a sudoers file.
+##
+
+##
+## Host alias specification
+##
+## Groups of machines. These may include host names (optionally with wildcards),
+## IP addresses, network numbers or netgroups.
+# Host_Alias	WEBSERVERS = www1, www2, www3
+
+##
+## User alias specification
+##
+## Groups of users.  These may consist of user names, uids, Unix groups,
+## or netgroups.
+# User_Alias	ADMINS = millert, dowdy, mikef
+
+##
+## Cmnd alias specification
+##
+## Groups of commands.  Often used to group related commands together.
+# Cmnd_Alias	PROCESSES = /usr/bin/nice, /bin/kill, /usr/bin/renice, \
+# 			    /usr/bin/pkill, /usr/bin/top
+
+##
+## Defaults specification
+##
+## You may wish to keep some of the following environment variables
+## when running commands via sudo.
+##
+## Locale settings
+# Defaults env_keep += "LANG LANGUAGE LINGUAS LC_* _XKB_CHARSET"
+##
+## Run X applications through sudo; HOME is used to find the
+## .Xauthority file.  Note that other programs use HOME to find
+## configuration files and this may lead to privilege escalation!
+# Defaults env_keep += "HOME"
+##
+## X11 resource path settings
+# Defaults env_keep += "XAPPLRESDIR XFILESEARCHPATH XUSERFILESEARCHPATH"
+##
+## Desktop path settings
+# Defaults env_keep += "QTDIR KDEDIR"
+##
+## Allow sudo-run commands to inherit the callers' ConsoleKit session
+# Defaults env_keep += "XDG_SESSION_COOKIE"
+##
+## Uncomment to enable special input methods.  Care should be taken as
+## this may allow users to subvert the command being run via sudo.
+# Defaults env_keep += "XMODIFIERS GTK_IM_MODULE QT_IM_MODULE QT_IM_SWITCHER"
+##
+## Uncomment to enable logging of a command's output, except for
+## sudoreplay and reboot.  Use sudoreplay to play back logged sessions.
+# Defaults log_output
+# Defaults!/usr/bin/sudoreplay !log_output
+# Defaults!/usr/local/bin/sudoreplay !log_output
+# Defaults!/sbin/reboot !log_output
+
+##
+## Runas alias specification
+##
+
+##
+## User privilege specification
+##
+root ALL=(ALL) ALL
+
+## Uncomment to allow members of group wheel to execute any command
+%wheel ALL=(ALL) ALL
+
+## Same thing without a password
+# %wheel ALL=(ALL) NOPASSWD: ALL
+
+## Uncomment to allow members of group sudo to execute any command
+# %sudo ALL=(ALL) ALL
+
+## Uncomment to allow any user to run sudo if they know the password
+## of the user they are running the command as (root by default).
+# Defaults targetpw  # Ask for the password of the target user
+# ALL ALL=(ALL) ALL  # WARNING: only use this together with 'Defaults targetpw'
+
+%rfkill ALL=(ALL) NOPASSWD: /usr/sbin/rfkill
+%network ALL=(ALL) NOPASSWD: /usr/bin/netcfg, /usr/bin/wifi-menu
+
+## Read drop-in files from /etc/sudoers.d
+## (the '#' here does not indicate a comment)
+#includedir /etc/sudoers.d
+EOF
+
+    chmod 440 /etc/sudoers
+}
+
+set_root_password() {
+    local password="$1"; shift
+
+    echo -en "$password\n$password" | passwd
+}
+
+create_user() {
+    local name="$1"; shift
+    local password="$1"; shift
+
+    useradd -m -s /bin/bash -G adm,systemd-journal,wheel,storage,power "$name"
+    echo -en "$password\n$password" | passwd "$name"
+}
+
+update_locate() {
+    updatedb
+}
+
+get_uuid() {
+    blkid -o export "$1" | grep -w "UUID" | awk -F= '{print $2}'
+}
+
+set -ex
+
+if [ "$1" == "chroot" ]
+then
+    configure
+else
+    setup
+fi
