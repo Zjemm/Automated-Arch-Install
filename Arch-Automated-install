@@ -53,10 +53,10 @@
 DRIVE='/dev/sda'
 
 # Hostname of the installed machine.
-HOSTNAME='host101'
+HOSTNAME='Ansible-test'
 
 # Encrypt everything (except /boot).  Leave blank to disable.
-ENCRYPT_DRIVE='/dev/sda2'
+ENCRYPT_DRIVE=''
 
 # Passphrase used to encrypt the drive (leave blank to be prompted).
 DRIVE_PASSPHRASE=''
@@ -65,7 +65,7 @@ DRIVE_PASSPHRASE=''
 ROOT_PASSWORD=''
 
 # Main user to create (by default, added to wheel group, and others).
-USER_NAME='user'
+USER_NAME='eesmi'
 
 # The main user's password (leave blank to be prompted).
 USER_PASSWORD=''
@@ -96,7 +96,7 @@ WIRELESS_DEVICE=""
 #WIRELESS_DEVICE="eth1"
 
 # Desktop tools, leave blank to not use a budgie/gnome desktop environment and desktop apps.
-DESKTOP="budgie"
+DESKTOP=""
 
 setup() {
     local boot_dev="$DRIVE"1
@@ -546,11 +546,13 @@ set_daemons() {
     if [ "$DESKTOP" = "budgie" ]
     then
         systemctl enable lightdm.service NetworkManager.service
+        systemctl disable dhcpcd.service net-auto-wired.service net-auto-wireless.service
     fi
 
     if [ "$DESKTOP" = "gnome" ]
     then
         systemctl enable gdm.service NetworkManager.service
+        systemctl disable dhcpcd.service net-auto-wired.service net-auto-wireless.service
     fi
 }
 
