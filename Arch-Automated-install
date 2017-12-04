@@ -299,7 +299,7 @@ install_packages() {
     local packages=''
 
     # General utilities/libraries
-    packages+=' alsa-utils aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli net-tools ntp openssh p7zip pkgfile powertop python rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion rofi htop atom lm_sensors bluez bluez-utils dmidecode fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install sshfs lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp screenfetch inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils bridge-utils network-manager-applet networkmanager guake dnsmasq qemu-arch-extra'
+    packages+=' alsa-utils aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli net-tools ntp openssh p7zip pkgfile powertop python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion rofi htop atom lm_sensors bluez bluez-utils dmidecode fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install sshfs lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp screenfetch inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils bridge-utils network-manager-applet networkmanager guake dnsmasq qemu-arch-extra'
 
     # Development packages
     packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils nmap'
