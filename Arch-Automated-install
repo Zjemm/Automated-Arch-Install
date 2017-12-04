@@ -95,6 +95,9 @@ WIRELESS_DEVICE=""
 # For tc4200's
 #WIRELESS_DEVICE="eth1"
 
+# Desktop tools, leave blank to not use a budgie/gnome desktop environment and desktop apps.
+DESKTOP="budgie"
+
 setup() {
     local boot_dev="$DRIVE"1
     local lvm_dev="$DRIVE"2
@@ -296,15 +299,24 @@ install_packages() {
     local packages=''
 
     # General utilities/libraries
-    packages+=' alsa-utils aspell-en chromium firefox cpupower acpid gvim mlocate net-tools ntp openssh p7zip pkgfile powertop python rsync sudo unrar tar unzip wget zip systemd-sysvcompat htop zsh grml-zsh-config'
+    packages+=' alsa-utils aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli net-tools ntp openssh p7zip pkgfile powertop python rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion rofi htop atom lm_sensors bluez bluez-utils dmidecode fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install sshfs lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp screenfetch inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils bridge-utils network-manager-applet networkmanager guake dnsmasq qemu-arch-extra'
 
     # Development packages
-    packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils'
+    packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils nmap'
 
     # Netcfg
     if [ -n "$WIRELESS_DEVICE" ]
     then
         packages+=' iw dialog wireless_tools wpa_supplicant'
+    fi
+
+    # destop
+    if [ "$DESKTOP" = "budgie" ]
+    then
+        packages+=' budgie-desktop arc-gtk-theme arc-icon-theme nautilus gnome-terminal gnome-calculator gnome-control-center gnome-keyring gnome-online-accounts gnome-screenshot gnome-settings-daemon gnome-tweak-tool gnome-disk-utility gnome-phone-manager gnome-themes-standard gnome-calendar gtk-engine-murrine lightdm-gtk-greeter-settings gnome-screensaver'
+    elif [ "$DESKTOP" = "gnome" ]
+    then
+        packages+=' gnome'
     fi
 
     # Java stuff
@@ -529,6 +541,16 @@ set_daemons() {
     if [ -z "$tmp_on_tmpfs" ]
     then
         systemctl mask tmp.mount
+    fi
+
+    if [ "$DESKTOP" = "budgie" ]
+    then
+        systemctl enable lightdm.service NetworkManager.service
+    fi
+
+    if [ "$DESKTOP" = "gnome" ]
+    then
+        systemctl enable gdm.service NetworkManager.service
     fi
 }
 
