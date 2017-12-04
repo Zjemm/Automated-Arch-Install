@@ -98,6 +98,10 @@ WIRELESS_DEVICE=""
 # Desktop tools, leave blank to not use a budgie/gnome desktop environment and desktop apps.
 DESKTOP=""
 
+# FULL install (more apps), leave blank if you only want a plain install
+# type "yes" for full install
+FULL=""
+
 setup() {
     local boot_dev="$DRIVE"1
     local lvm_dev="$DRIVE"2
@@ -299,7 +303,7 @@ install_packages() {
     local packages=''
 
     # General utilities/libraries
-    packages+=' alsa-utils aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli net-tools ntp openssh p7zip pkgfile powertop python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion rofi htop atom lm_sensors bluez bluez-utils dmidecode fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install sshfs lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp screenfetch inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils bridge-utils network-manager-applet networkmanager guake dnsmasq qemu-arch-extra'
+    packages+=' alsa-utils net-tools ntp openssh p7zip pkgfile python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion htop dmidecode sshfs screenfetch bridge-utils networkmanager dnsmasq'
 
     # Development packages
     packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils nmap'
@@ -308,6 +312,12 @@ install_packages() {
     if [ -n "$WIRELESS_DEVICE" ]
     then
         packages+=' iw dialog wireless_tools wpa_supplicant'
+    fi
+
+    # Plain install or Full install
+    if [ "$FULL" = "yes" ]
+    then
+        packages+=' aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli powertop python python-pip rofi atom lm_sensors bluez bluez-utils fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp  inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils network-manager-applet guake qemu-arch-extra'
     fi
 
     # destop
