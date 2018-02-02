@@ -53,7 +53,7 @@
 DRIVE='/dev/sda'
 
 # Hostname of the installed machine.
-HOSTNAME='Ansible-test'
+HOSTNAME='Ansible-Client'
 
 # Encrypt everything (except /boot).  Leave blank to disable.
 ENCRYPT_DRIVE=''
@@ -65,7 +65,7 @@ DRIVE_PASSPHRASE=''
 ROOT_PASSWORD=''
 
 # Main user to create (by default, added to wheel group, and others).
-USER_NAME='eesmi'
+USER_NAME='eei'
 
 # The main user's password (leave blank to be prompted).
 USER_PASSWORD=''
@@ -303,7 +303,7 @@ install_packages() {
     local packages=''
 
     # General utilities/libraries
-    packages+=' alsa-utils net-tools ntp openssh p7zip pkgfile python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion htop dmidecode sshfs screenfetch bridge-utils networkmanager dnsmasq'
+    packages+=' alsa-utils net-tools ntp openssh p7zip pkgfile mlocate python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion htop dmidecode sshfs screenfetch bridge-utils networkmanager dnsmasq'
 
     # Development packages
     packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils nmap'
@@ -539,7 +539,12 @@ EOF
 set_daemons() {
     local tmp_on_tmpfs="$1"; shift
 
-    systemctl enable cpupower.service ntpd.service sshd.service
+    if [ "$FULL" = "yes" ]
+    then
+        systemctl enable cpupower.service ntpd.service sshd.service
+    else
+        systemctl enable ntpd.service sshd.service
+    fi
 
     if [ -n "$WIRELESS_DEVICE" ]
     then
