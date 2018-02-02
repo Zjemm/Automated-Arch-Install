@@ -741,6 +741,7 @@ set_root_password() {
     local password="$1"; shift
 
     echo -en "$password\n$password" | passwd
+    passwd -l root
 }
 
 create_user() {
