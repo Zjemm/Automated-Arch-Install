@@ -2,8 +2,8 @@
 # Author: Zjemm
 # Email: mail [at] sjemm {dot} net
 # Please use/share/comment/reference
-# Date: 29-11-2017
-# Version 0.2
+# Date: 08-10-2018
+# Version 0.3
 #
 #
 # This is a copy of the script from Tom Wambold, but edited to meet my needs
@@ -53,7 +53,7 @@
 DRIVE='/dev/sda'
 
 # Hostname of the installed machine.
-HOSTNAME='Ansible-Client'
+HOSTNAME='Arch'
 
 # Encrypt everything (except /boot).  Leave blank to disable.
 ENCRYPT_DRIVE=''
@@ -65,7 +65,7 @@ DRIVE_PASSPHRASE=''
 ROOT_PASSWORD=''
 
 # Main user to create (by default, added to wheel group, and others).
-USER_NAME='eei'
+USER_NAME='eesmi'
 
 # The main user's password (leave blank to be prompted).
 USER_PASSWORD=''
@@ -303,10 +303,10 @@ install_packages() {
     local packages=''
 
     # General utilities/libraries
-    packages+=' alsa-utils net-tools ntp openssh p7zip pkgfile mlocate python python-pip rsync sudo unrar tar unzip wget zip systemd-sysvcompat bash-completion htop dmidecode sshfs screenfetch bridge-utils networkmanager dnsmasq'
+    packages+=' net-tools ntp tcpdump openssh p7zip pkgfile mlocate rsync sudo unrar tar unzip wget dnsutils zip systemd-sysvcompat bash-completion htop dmidecode sshfs bridge-utils networkmanager dnsmasq'
 
     # Development packages
-    packages+=' cmake gdb git tcpdump wireshark-gtk dnsutils nmap'
+    packages+=' cmake gdb git'
 
     # Netcfg
     if [ -n "$WIRELESS_DEVICE" ]
@@ -317,7 +317,7 @@ install_packages() {
     # Plain install or Full install
     if [ "$FULL" = "yes" ]
     then
-        packages+=' aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli powertop python python-pip rofi atom lm_sensors bluez bluez-utils fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp  inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils network-manager-applet guake qemu-arch-extra'
+        packages+=' aspell-en chromium firefox gloobus-preview cpupower acpid gvim mlocate ipcalc xdotool speedtest-cli powertop python python-pip rofi atom lm_sensors bluez bluez-utils fuse-exfat flac lame libmpeg2 x264 xvidcore flashplugin libdvdcss libdvdread libdvdnav dvd+rw-tools remmina libvirt qemu freerdp virt-manager virt-install lightdm lightdm-gtk-greeter file-roller keepassx2 gvfs gvfs-afc gvfs-goa gvfs-google gvfs-gphoto2 gvfs-mtp gvfs-nfs gvfs-smb samba gimp inkscape xorg-xrandr minicom xdg-user-dirs xdg-user-dirs-gtk xdg-utils network-manager-applet guake qemu-arch-extra alsa-utils python python-pip screenfetch nmap wireshark-gtk'
     fi
 
     # destop
@@ -339,19 +339,25 @@ install_packages() {
     packages+=' gparted dosfstools ntfsprogs grub os-prober efibootmgr'
 
     # Xserver
-    packages+=' xorg-apps xorg-server xorg-xinit xterm xorg-xinput'
-
-    # Slim login manager
-    # packages+=' slim archlinux-themes-slim'
+    if [ -n "$DESKTOP" ]
+    then
+        packages+=' xorg-apps xorg-server xorg-xinit xterm xorg-xinput'
+    fi
 
     # Fonts
-    packages+=' ttf-dejavu ttf-liberation terminus-font ttf-freefont ttf-droid'
+    if [ -n "$DESKTOP" ]
+    then
+        packages+=' ttf-dejavu ttf-liberation terminus-font ttf-freefont ttf-droid'
+    fi
 
     # On Intel processors
     packages+=' intel-ucode'
 
     # For laptops
-    packages+=' libinput'
+    if [ -n "$DESKTOP" ]
+    then
+        packages+=' libinput'
+    fi
 
     # Extra packages for tc4200 tablet
     #packages+=' ipw2200-fw xf86-input-wacom'
